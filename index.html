@@ -1,0 +1,368 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Caption Generator</title>
+    <!-- Load Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Load Lucide Icons for aesthetic UI elements -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <style>
+        /* Custom Tailwind Configuration for "Inter" font and primary color (Static Dark Mode) */
+        :root {
+            --primary-color: #60a5fa; /* Blue-400 for contrast in dark mode */
+        }
+        @layer base {
+            html {
+                font-family: 'Inter', sans-serif;
+            }
+        }
+        /* Custom scrollbar for better aesthetics */
+        textarea::-webkit-scrollbar {
+            width: 6px;
+        }
+        textarea::-webkit-scrollbar-thumb {
+            background-color: var(--primary-color);
+            border-radius: 3px;
+        }
+        /* Static dark mode scrollbar track */
+        textarea::-webkit-scrollbar-track {
+            background-color: #374151; /* Gray-700 in dark mode */
+        }
+    </style>
+</head>
+<body class="bg-gray-900 min-h-screen p-4 sm:p-8 text-gray-100 transition-colors duration-300">
+
+    <div id="app" class="max-w-4xl mx-auto">
+        <header class="text-center mb-8 relative">
+            
+            <h1 class="text-4xl font-extrabold text-white mb-2 flex items-center justify-center">
+                <i data-lucide="sparkles" class="w-8 h-8 mr-2 text-blue-400"></i>
+                Caption Builder AI
+            </h1>
+            <p class="text-gray-400 max-w-lg mx-auto">Generate structured captions (Hook, Value, CTA, Hashtags) based on the expert template.</p>
+        </header>
+
+        <!-- Input Section -->
+        <div class="bg-gray-800 p-6 rounded-xl shadow-lg mb-8 border border-blue-700 transition-colors duration-300">
+            <label for="topicInput" class="block text-lg font-semibold mb-3 text-blue-400">
+                1. What is your Topic/Information?
+            </label>
+            <textarea id="topicInput" rows="3" placeholder="e.g., The top 3 fat loss secrets, or A step-by-step guide to setting up a perfect home gym..."
+                      class="w-full p-3 border border-gray-600 rounded-lg focus:ring-blue-400 focus:border-blue-400 transition duration-150 ease-in-out resize-none shadow-inner bg-gray-700 text-gray-100"></textarea>
+            
+            <button id="generateBtn" onclick="generateCaption()"
+                    class="mt-4 w-full sm:w-auto px-6 py-3 bg-blue-500 text-white font-bold rounded-lg hover:bg-blue-600 transition duration-150 ease-in-out shadow-md hover:shadow-lg flex items-center justify-center disabled:opacity-50">
+                <i data-lucide="magic-wand" class="w-5 h-5 mr-2"></i>
+                <span id="buttonText">Generate Structured Caption</span>
+            </button>
+            <div id="loadingIndicator" class="hidden mt-3 text-blue-400 font-medium">
+                <i data-lucide="loader-circle" class="w-5 h-5 mr-2 animate-spin inline-block"></i>
+                Generating...
+            </div>
+            <div id="errorIndicator" class="hidden mt-3 text-red-400 font-medium">
+                <i data-lucide="alert-triangle" class="w-5 h-5 mr-2 inline-block"></i>
+                An error occurred. Please try again.
+            </div>
+        </div>
+
+        <!-- Output and Editing Section -->
+        <div class="bg-gray-800 p-6 rounded-xl shadow-lg border border-gray-700 transition-colors duration-300" id="outputSection">
+            <h2 class="text-2xl font-bold text-white mb-6 border-b pb-2 border-gray-700">
+                2. Review & Edit Sections
+            </h2>
+
+            <!-- Output Blocks -->
+            <div id="caption-container" class="space-y-6">
+                <!-- Placeholder divs for sections, content is injected by JS -->
+                <div id="hook-section"></div>
+                <div id="context-section"></div>
+                <div id="value-section"></div>
+                <div id="cta-section"></div>
+                <div id="hashtags-section"></div>
+
+            </div>
+
+            <!-- Export Button -->
+            <button id="exportBtn" onclick="exportCaption()" disabled
+                    class="mt-8 w-full px-6 py-3 bg-green-600 text-white font-bold rounded-lg hover:bg-green-700 transition duration-150 ease-in-out shadow-md hover:shadow-lg flex items-center justify-center disabled:opacity-50">
+                <i data-lucide="copy" class="w-5 h-5 mr-2"></i>
+                <span id="exportButtonText">Export & Copy Full Caption (0 characters)</span>
+            </button>
+            <p id="copyMessage" class="text-center text-sm text-green-400 mt-2 hidden">
+                <i data-lucide="check-circle" class="w-4 h-4 inline-block mr-1"></i>
+                Caption copied to clipboard!
+            </p>
+        </div>
+    </div>
+
+    <script type="module">
+        // Ensure Lucide icons are rendered
+        lucide.createIcons();
+        
+        // Theme functions are removed, maintaining a static dark theme now.
+
+        // Constants and Initialization
+        const API_KEY = "AIzaSyAP0AfUPiRm3w5VHcVNQy7W476jUijHNog"; // Automatically provided in the execution environment
+        const API_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${API_KEY}`;
+        
+        const topicInput = document.getElementById('topicInput');
+        const generateBtn = document.getElementById('generateBtn');
+        const buttonText = document.getElementById('buttonText');
+        const loadingIndicator = document.getElementById('loadingIndicator');
+        const errorIndicator = document.getElementById('errorIndicator');
+        const exportBtn = document.getElementById('exportBtn');
+        const exportButtonText = document.getElementById('exportButtonText');
+        const copyMessage = document.getElementById('copyMessage');
+
+        // Helper function updated for static dark mode styles
+        function createSection(id, title, description, initialContent = "") {
+            return `
+                <div class="border border-gray-700 rounded-xl shadow-sm hover:shadow-md transition duration-200 p-4 bg-gray-700">
+                    <label for="${id}" class="block text-sm font-semibold mb-2 text-gray-300">
+                        ${title} <span class="text-xs font-normal text-gray-400">(${description})</span>
+                    </label>
+                    <textarea id="${id}" rows="${id === 'hashtags' ? '3' : '5'}" 
+                              class="w-full p-2 text-sm border border-gray-600 rounded-lg focus:ring-blue-400 focus:border-blue-400 resize-none bg-gray-600 text-gray-100">${initialContent}</textarea>
+                </div>
+            `;
+        }
+
+        // Initial setup of sections
+        const sections = [
+            { id: 'hook', title: 'HOOK (1-2 Sentences)', description: 'Attention-grabbing open to build curiosity.', containerId: 'hook-section' },
+            { id: 'context', title: 'CONTEXT', description: 'Introduce the problem or the “way to go”.', containerId: 'context-section' },
+            { id: 'value', title: 'VALUE', description: 'The core content: tips, secrets, or why they should read this.', containerId: 'value-section' },
+            { id: 'cta', title: 'CTA (Call to Action)', description: 'What should they do next? (e.g., Save this, Follow).', containerId: 'cta-section' },
+            { id: 'hashtags', title: 'HASHTAGS (25-30 Total)', description: 'Relevant hashtags separated by spaces.', containerId: 'hashtags-section' },
+        ];
+
+        function initializeSections() {
+            sections.forEach(s => {
+                document.getElementById(s.containerId).innerHTML = createSection(s.id, s.title, s.description, "");
+                // Add input listener to update character count dynamically
+                document.getElementById(s.id).addEventListener('input', updateExportButton);
+            });
+            // Initial update to reflect empty state
+            updateExportButton();
+        }
+        
+        initializeSections();
+
+        function updateExportButton() {
+            let totalLength = 0;
+            let allEmpty = true;
+            sections.forEach(s => {
+                const content = document.getElementById(s.id).value.trim();
+                totalLength += content.length;
+                if (content.length > 0) {
+                    allEmpty = false;
+                }
+            });
+
+            if (allEmpty) {
+                exportBtn.disabled = true;
+                exportButtonText.textContent = `Export & Copy Full Caption (0 characters)`;
+            } else {
+                exportBtn.disabled = false;
+                exportButtonText.textContent = `Export & Copy Full Caption (${totalLength} characters)`;
+            }
+        }
+
+        function setLoadingState(isLoading, errorText = null) {
+            generateBtn.disabled = isLoading;
+            topicInput.disabled = isLoading;
+            loadingIndicator.classList.toggle('hidden', !isLoading);
+            errorIndicator.classList.toggle('hidden', !errorText);
+            if (errorText) {
+                errorIndicator.textContent = errorText;
+            } else {
+                errorIndicator.textContent = '';
+            }
+            // Use only 'Generating...' when loading
+            buttonText.textContent = isLoading ? 'Generating...' : 'Generate Structured Caption';
+        }
+
+        function updateUI(generatedData) {
+            sections.forEach(s => {
+                const textarea = document.getElementById(s.id);
+                if (textarea && generatedData[s.id]) {
+                    // Content manipulation
+                    let content = generatedData[s.id];
+
+                    if (s.id === 'hook' || s.id === 'context' || s.id === 'value') {
+                        if (content.length > 0) {
+                             // Basic formatting: ensure first letter is capitalized, and it ends with proper punctuation if it's not a question.
+                             content = content.trim();
+                             content = content.charAt(0).toUpperCase() + content.slice(1);
+                             if (!content.match(/[.!?]$/)) {
+                                content += '.';
+                             }
+                        }
+                    } else if (s.id === 'hashtags') {
+                        // Clean up hashtags: remove emojis and ensure they all start with # and are space-separated
+                        content = content.replace(/(\u00a9|\u00ae|[\u2000-\u3300]|\ud83c[\ud000-\udfff]|\ud83d[\ud000-\udfff]|\ud83e[\ud000-\udfff])/g, '') // Basic emoji stripping
+                            .split(/\s+/)
+                            .map(tag => {
+                                let cleanTag = tag.replace(/[^a-zA-Z0-9]/g, ''); 
+                                return cleanTag.length > 0 ? '#' + cleanTag : '';
+                            })
+                            .filter(tag => tag.length > 1)
+                            .join(' '); 
+                    }
+                    textarea.value = content;
+                }
+            });
+            updateExportButton();
+        }
+
+        async function callGeminiAPI(prompt, maxRetries = 3) {
+            // System prompt updated to explicitly request emojis in the content sections.
+            const systemPrompt = "You are a world-class social media caption writer specializing in the Hook-Context-Value-CTA structure. Generate content for all five sections based on the user's topic. Include relevant, high-impact EMOJIS (2-3 per section) in the Hook, Context, Value, and CTA to make the text highly visual and engaging. Do NOT use emojis in the hashtags section. Your entire response MUST be a single JSON object conforming to the provided schema. Do not include any explanation or markdown outside the JSON structure. The 'hashtags' field must contain 25-30 relevant hashtags separated by spaces.";
+            
+            const payload = {
+                contents: [{ parts: [{ text: prompt }] }],
+                systemInstruction: { parts: [{ text: systemPrompt }] },
+                generationConfig: {
+                    responseMimeType: "application/json",
+                    responseSchema: {
+                        type: "OBJECT",
+                        properties: {
+                            "hook": { "type": "STRING", "description": "A compelling opening sentence or question to build curiosity (1-2 sentences only), including emojis." },
+                            "context": { "type": "STRING", "description": "Explain the situation or core idea, including emojis." },
+                            "value": { "type": "STRING", "description": "The main content/solution, including emojis." },
+                            "cta": { "type": "STRING", "description": "A clear call to action, including emojis." },
+                            "hashtags": { "type": "STRING", "description": "A list of 25 to 30 relevant hashtags, all starting with '#', separated by spaces. NO EMOJIS HERE." }
+                        },
+                        required: ["hook", "context", "value", "cta", "hashtags"]
+                    }
+                }
+            };
+
+            for (let i = 0; i < maxRetries; i++) {
+                try {
+                    const response = await fetch(API_URL, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(payload)
+                    });
+
+                    if (!response.ok) {
+                        if (response.status === 429 && i < maxRetries - 1) {
+                            const delay = Math.pow(2, i) * 1000; // Exponential backoff: 1s, 2s, 4s
+                            await new Promise(resolve => setTimeout(resolve, delay));
+                            continue; // Retry
+                        }
+                        throw new Error(`HTTP error! Status: ${response.status}`);
+                    }
+
+                    const result = await response.json();
+                    const jsonText = result.candidates?.[0]?.content?.parts?.[0]?.text;
+
+                    if (jsonText) {
+                        return JSON.parse(jsonText);
+                    }
+                    throw new Error("No structured content received from AI.");
+                    
+                } catch (error) {
+                    if (i === maxRetries - 1) {
+                        console.error("Gemini API call failed after multiple retries:", error);
+                        throw error;
+                    }
+                    // Wait for retry
+                }
+            }
+        }
+
+        const generateCaption = async () => {
+            const topic = topicInput.value.trim();
+
+            if (!topic) {
+                setLoadingState(false, "Please enter a topic or information to generate the caption.");
+                topicInput.classList.add('border-red-500', 'ring-2', 'ring-red-200');
+                
+                setTimeout(() => {
+                    setLoadingState(false);
+                    topicInput.classList.remove('border-red-500', 'ring-2', 'ring-red-200');
+                }, 3000);
+                return;
+            }
+
+            setLoadingState(true);
+            copyMessage.classList.add('hidden'); // Hide success message
+
+            // Updated prompt to explicitly request emojis
+            const prompt = `${topic}. Please generate the caption sections, ensuring strong, relevant emojis are included in the Hook, Context, Value, and CTA.`;
+
+            try {
+                const generatedData = await callGeminiAPI(prompt);
+                updateUI(generatedData);
+                setLoadingState(false);
+            } catch (error) {
+                setLoadingState(false, error.message || 'Failed to connect to AI service. Check the console for details.');
+                console.error("Caption Generation Error:", error);
+            }
+        }
+
+        const exportCaption = async () => {
+            let fullCaption = '';
+
+            // 1. Hook (1-2 lines)
+            const hook = document.getElementById('hook').value.trim();
+            if (hook) fullCaption += hook + '\n\n';
+
+            // 2. Context (1-2 lines)
+            const context = document.getElementById('context').value.trim();
+            if (context) fullCaption += context + '\n\n';
+
+            // 3. Value (Main Body - separate paragraphs with a line break)
+            const value = document.getElementById('value').value.trim();
+            if (value) fullCaption += value + '\n\n';
+
+            // 4. CTA (1 line)
+            const cta = document.getElementById('cta').value.trim();
+            if (cta) fullCaption += cta + '\n\n';
+
+            // 5. Hashtags
+            const hashtags = document.getElementById('hashtags').value.trim();
+            if (hashtags) fullCaption += hashtags;
+
+            // Use document.execCommand('copy') for better compatibility in iframe environments
+            try {
+                const tempTextArea = document.createElement('textarea');
+                tempTextArea.value = fullCaption;
+                tempTextArea.style.position = 'fixed'; // Prevents scrolling to the element
+                document.body.appendChild(tempTextArea);
+                tempTextArea.focus();
+                tempTextArea.select();
+                
+                // CRITICAL: Use execCommand for copy in this environment
+                document.execCommand('copy');
+                document.body.removeChild(tempTextArea);
+
+                copyMessage.classList.remove('hidden');
+                setTimeout(() => copyMessage.classList.add('hidden'), 3000);
+
+            } catch (err) {
+                console.error('Could not copy text: ', err);
+                // Fallback UI indication
+                errorIndicator.textContent = 'Failed to copy. Please manually select and copy the text.';
+                errorIndicator.classList.remove('hidden');
+                setTimeout(() => errorIndicator.classList.add('hidden'), 5000);
+            }
+        }
+
+        // Expose functions globally so the HTML onclick attributes can access them
+        window.generateCaption = generateCaption;
+        window.exportCaption = exportCaption;
+        
+        // Update button state on load
+        window.addEventListener('load', () => {
+            updateExportButton();
+        });
+    </script>
+</body>
+</html>
+
+
